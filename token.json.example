@@ -1,0 +1,13 @@
+{
+  "database": {
+    "address": "",
+    "name": "",
+    "username": "",
+    "password": "",
+    "port": ,
+    "ssl": true
+  },
+  "discord": "",
+  "gemini": "",
+  "youtube": ""
+}

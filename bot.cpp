@@ -3,6 +3,7 @@
 #include <regex>
 #include <fmt/format.h>
 #include <mysql/mysql.h>
+#include "header/game.h"
 #include "header/youtubeapi.h"
 #include "header/bypasslink.h"
 #include "header/AIapi.h"
@@ -11,6 +12,8 @@
 using json = nlohmann::json;
 
 constexpr dpp::snowflake dev_id = 1036979020568477747;
+
+dpp::emoji_map bot_emojis;
 
 std::string token, address, username, password;
 unsigned int port = 0;
@@ -75,39 +78,44 @@ signed main() {
 
     bot.on_log(dpp::utility::cout_logger());
 
+
     bot.on_ready([&bot](const dpp::ready_t& event) {
+        bot.application_emojis_get([](const dpp::confirmation_callback_t& callback) {
+            if (callback.is_error()) return;
+            bot_emojis = callback.get<dpp::emoji_map>();
+            });
 
         if (dpp::run_once<struct register_bot_commands>()) {
             dpp::slashcommand info("info", "thông tin bot", bot.me.id),
                 help("help", "xem lệnh của bot", bot.me.id),
                 seach("seach", "tìm video(không hỗ trợ stream)", bot.me.id),
                 bypass("bypass", "vượt link", bot.me.id),
-                addemoji("add_emoji", "thêm emoji vào máy chủ", bot.me.id),
+                /*addemoji("add_emoji", "thêm emoji vào máy chủ", bot.me.id),*/
                 aichat("ask", "trò chuyện với AI", bot.me.id),
-                game("game", "chơi trò chơi", bot.me.id);
-
-            //scan.add_option(dpp::command_option(dpp::co_string, "url", "nhập url", true));
+                game("game", "chơi trò chơi", bot.me.id),
+                reg("register", "register", bot.me.id);
 
             seach.add_option(dpp::command_option(dpp::co_string, "text", "text", true));
 
             bypass.add_option(dpp::command_option(dpp::co_string, "url ", "nhập url", true));
 
-            addemoji.set_default_permissions(dpp::p_manage_emojis_and_stickers);
-            addemoji.add_option(dpp::command_option(dpp::co_string, "emoji", "nhập emoji", true));
+            /*addemoji.set_default_permissions(dpp::p_manage_emojis_and_stickers);
+            addemoji.add_option(dpp::command_option(dpp::co_string, "emoji", "nhập emoji", true));*/
 
-            aichat.add_option(dpp::command_option(dpp::co_string, "content", "nội dung muốn hỏi", true));
-            aichat.add_option(dpp::command_option(dpp::co_integer, "module", "chọn module AI", true)
-                .add_choice(dpp::command_option_choice("gemini-1.5-flash", 1))
-                .add_choice(dpp::command_option_choice("gemini-1.0-pro", 2))
-            );
-            aichat.add_option(dpp::command_option(dpp::co_attachment, "file", "tệp dính kèm"));
+            aichat.add_option(dpp::command_option(dpp::co_string, "content", "nội dung muốn hỏi", true))
+                .add_option(dpp::command_option(dpp::co_integer, "module", "chọn module AI", true)
+                    .add_choice(dpp::command_option_choice("gemini-1.5-flash", 1))
+                    .add_choice(dpp::command_option_choice("gemini-1.0-pro", 2))
+                )
+                .add_option(dpp::command_option(dpp::co_attachment, "file", "tệp dính kèm"));
+            
 
             game.add_option(dpp::command_option(dpp::co_string, "game", "chọn trò chơi", true)
-                .add_choice(dpp::command_option_choice("blackjack", "blackjack"))
-            );
-            game.add_option(dpp::command_option(dpp::co_integer, "amount", "số tiền cược", true));
+                    .add_choice(dpp::command_option_choice("blackjack", "blackjack"))
+                )
+                .add_option(dpp::command_option(dpp::co_integer, "amount", "số tiền cược", true));
 
-            bot.global_bulk_command_create({ info,/*leave,scan,*/seach,bypass,help,addemoji,aichat,game });
+            bot.global_bulk_command_create({ info,seach,bypass,help,/*addemoji,*/aichat,game,reg });
         }
         });
 
@@ -174,6 +182,39 @@ signed main() {
             co_await seach(text, bot, event);
         }
 
+        if (event.command.get_command_name() == "register") {
+            try {
+                co_await reg(database, event.command.usr.id, event);
+            }
+            catch (request_error& ex) {
+                bot.log(dpp::ll_error, ex.what());
+                ex.send_error(bot, event, dev_id);
+            }
+            catch (std::exception& ex) {
+                bot.log(dpp::ll_critical, ex.what());
+                event.edit_original_response(dpp::message("có lỗi ngiêm trọng xảy ra"));
+            }
+        }
+
+        if (event.command.get_command_name() == "game") {
+            std::string game = std::get<std::string>(event.get_parameter("game"));
+            dpp::snowflake user = event.command.usr.id;
+            int amount = std::get<int64_t>(event.get_parameter("amount"));
+            if (game == "blackjack") {
+                try {
+                    blackjack a(user, amount);
+                    co_await a.play(database, event);
+                }
+                catch (request_error& ex) {
+                    bot.log(dpp::ll_error, ex.what());
+                    ex.send_error(bot, event, dev_id);
+                }
+                catch (std::exception& ex) {
+                    bot.log(dpp::ll_critical, ex.what());
+                    event.edit_original_response(dpp::message("có lỗi ngiêm trọng xảy ra"));
+                }
+            }
+        }
 
         //trợ giúp
         if (event.command.get_command_name() == "help") {
