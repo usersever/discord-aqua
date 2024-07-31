@@ -3,6 +3,7 @@
 #include <regex>
 #include <fmt/format.h>
 #include <mysql/mysql.h>
+#include <cstdlib>
 #include "header/game.h"
 #include "header/youtubeapi.h"
 #include "header/bypasslink.h"
@@ -15,9 +16,28 @@ constexpr dpp::snowflake dev_id = 1036979020568477747;
 
 dpp::emoji_map bot_emojis;
 
-std::string token, address, username, password;
+std::string token;
 unsigned int port = 0;
 
+#define REPLIT false
+#if REPLIT
+
+void get_data(MYSQL*& db) {
+    token = std::getenv("discord");
+    apikey = std::getenv("youtube");
+    gemini_api = std::getenv("gemini");
+    db = mysql_init(NULL);
+    if (!db) {
+        throw std::exception("sql init failed");
+    }
+    if (mysql_ssl_set(db, NULL, NULL, NULL, NULL, NULL)) {
+        throw std::exception(mysql_error(db));
+    }
+    if (mysql_real_connect(db, std::getenv("address"), std::getenv("username"), std::getenv("password"), std::getenv("name"), std::stoi(std::getenv("port")), nullptr, 0) == NULL) {
+        throw std::exception(mysql_error(db));
+    }
+}
+#else
 void get_data(MYSQL*& db) {
     std::ifstream f("token.json");
     json j = json::parse(f);
@@ -44,6 +64,8 @@ void get_data(MYSQL*& db) {
     }
     else throw std::exception("something are missing");
 }
+
+#endif
 
 bool isURL(const std::string& str) {
     std::regex url_pattern(
