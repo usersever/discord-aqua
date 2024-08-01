@@ -19,8 +19,8 @@ dpp::emoji_map bot_emojis;
 std::string token;
 unsigned int port = 0;
 
-#define REPLIT false
-#if REPLIT
+
+#ifdef REPLIT
 
 void get_data(MYSQL*& db) {
     token = std::getenv("discord");
