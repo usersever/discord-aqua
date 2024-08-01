@@ -19,8 +19,8 @@ dpp::emoji_map bot_emojis;
 std::string token;
 unsigned int port = 0;
 
-#define REPLIT false
-#if REPLIT
+
+#ifdef REPLIT
 
 void get_data(MYSQL*& db) {
     token = std::getenv("discord");
@@ -166,9 +166,9 @@ signed main() {
                 if (isURL(url))
                     co_await bypass_link(url, bot, event);
                 else
-                    event.co_edit_original_response(dpp::message("không chứa url trong tin nhắn"));
+                    event.edit_original_response(dpp::message("không chứa url trong tin nhắn"));
             }
-            else event.co_edit_original_response(dpp::message("lệnh đang bảo trì"));
+            else event.edit_original_response(dpp::message("lệnh đang bảo trì"));
         }
         if (event.command.get_command_name() == "ask") {
             

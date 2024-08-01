@@ -197,7 +197,7 @@ dpp::task<void> blackjack::play(MYSQL* db, const dpp::slashcommand_t& event) {
 				.set_id(std::to_string(user_id) + "_s")
 			)
 		);
-		co_await event.co_edit_original_response(m);
+		event.edit_original_response(m);
 
 		auto result = co_await dpp::when_any{
 		event.from->creator->on_button_click.when([this](const dpp::button_click_t& b) { 
@@ -252,7 +252,7 @@ dpp::task<void> blackjack::play(MYSQL* db, const dpp::slashcommand_t& event) {
 			get_emoji_string(playerhand)
 		);
 	dpp::message m(game);
-	event.co_edit_original_response(m);
+	event.edit_original_response(m);
 
 	//auto it = std::remove(userid.begin(), userid.end(), user_id);
 	//userid.erase(it, userid.end());
@@ -289,12 +289,12 @@ dpp::task<bool> is_exist(MYSQL* db, dpp::snowflake user_id) {
 
 dpp::task<void> reg(MYSQL* db, dpp::snowflake user_id, const dpp::slashcommand_t& event) {
 	if (co_await is_exist(db, user_id)) {
-		event.co_edit_original_response(dpp::message("bạn đã đăng kí trước kia"));
+		event.edit_original_response(dpp::message("bạn đã đăng kí trước kia"));
 		co_return;
 	}
 	std::string qwerty = fmt::format(fmt::runtime("INSERT INTO players (user_id) VALUES ({})"), user_id);
 	if (mysql_query(db, qwerty.c_str())) {
 		REQUEST_ERROR(mysql_error(db), qwerty, "");
 	}
-	else event.co_edit_original_response(dpp::message("đăng kí thành công"));
+	else event.edit_original_response(dpp::message("đăng kí thành công"));
 }
