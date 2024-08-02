@@ -9,16 +9,17 @@ set(DPP_CORO ON)
 
 # Vcpkg integration
 if(DEFINED ENV{VCPKG_ROOT} AND EXISTS $ENV{VCPKG_ROOT})
-  set(VCPKG_ROOT "$ENV{VCPKG_ROOT}")
-  set(CMAKE_TOOLCHAIN_FILE "${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+	message("Found vcpkg at $ENV{VCPKG_ROOT}")
+	set(VCPKG_ROOT "$ENV{VCPKG_ROOT}")
+	set(CMAKE_TOOLCHAIN_FILE "${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
 endif()
 
 # Find required packages
-find_package(OpenSSL QUIET)
-find_package(CURL QUIET)
-find_package(dpp QUIET)
-find_package(fmt QUIET)
-find_package(unofficial-libmysql QUIET)
+find_package(OpenSSL CONFIG QUIET)
+find_package(CURL CONFIG QUIET)
+find_package(dpp CONFIG QUIET)
+find_package(fmt CONFIG QUIET)
+find_package(unofficial-libmysql CONFIG QUIET)
 find_package(Threads REQUIRED)
 
 # Define the executable target
