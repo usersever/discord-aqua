@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(bot_discord)
+project(bot_discord VERSION 1.0.0)
 
 option(REPLIT "run this code on replit" OFF)
 
@@ -116,8 +116,8 @@ endif()
 
 if(NOT unofficial-libmysql_FOUND)
 	include(FetchContent)
-	set(mysql_SOURCE_DIR "${CMAKE_BINARY_DIR}/3rdlib/mysql")
-    set(mysql_BINARY_DIR "${CMAKE_BINARY_DIR}/build/mysql")
+	set(mysql_SOURCE_DIR "${CMAKE_BINARY_DIR}/3rdlib/mysql-server")
+    set(mysql_BINARY_DIR "${CMAKE_BINARY_DIR}/build/mysql-server")
 	if(NOT EXISTS ${mysql_SOURCE_DIR})
 		message(STATUS "mysql dir is not found, starting install and build from repository...")
 		FetchContent_Declare(
