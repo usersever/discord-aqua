@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(bot_discord)
+project(bot_discord VERSION 1.0.0)
 
 option(REPLIT "run this code on replit" OFF)
 
