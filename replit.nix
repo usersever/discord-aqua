@@ -1,5 +1,6 @@
 {pkgs}: {
    deps = [
+     pkgs.wget
      pkgs.nlohmann_json
      pkgs.libsodium
      pkgs.libopus
@@ -7,10 +8,10 @@
      pkgs.zlib
      pkgs.cmake
      pkgs.pkg-config
-     pkgs.libldap
+     pkgs.openldap
      pkgs.libpsl
      pkgs.libssh2
-     pkgs.libpthreadstubs
+     pkgs.xorg.libpthreadstubs
      pkgs.libmysqlclient
    ];
  }
