@@ -10,6 +10,15 @@
 #include "header/AIapi.h"
 #include "header/error.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#include <psapi.h>
+#elif __linux__
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#endif
+
 using json = nlohmann::json;
 
 constexpr dpp::snowflake dev_id = 1036979020568477747;
@@ -19,9 +28,78 @@ dpp::emoji_map bot_emojis;
 std::string token;
 unsigned int port = 0;
 
+double getCpuUsage() {
+    double usage = 0.0;
+#ifdef _WIN32
+    FILETIME idleTime, kernelTime, userTime;
+    GetSystemTimes(&idleTime, &kernelTime, &userTime);
+
+    ULARGE_INTEGER a, b;
+    a.LowPart = idleTime.dwLowDateTime;
+    a.HighPart = idleTime.dwHighDateTime;
+
+    b.LowPart = kernelTime.dwLowDateTime + userTime.dwLowDateTime;
+    b.HighPart = kernelTime.dwHighDateTime + userTime.dwHighDateTime;
+
+    double idle = a.QuadPart;
+    double kernelUser = b.QuadPart;
+
+    usage = (1 - idle / kernelUser) * 100;
+#elif __linux__
+    // Code to get CPU Usage on Linux
+    char cpuUsageCommand[50];
+    FILE* pipe = popen("top -b -n 1 | grep Cpu | awk '{print $2}'", "r");
+    if (!pipe) return 0.0;
+
+    fscanf(pipe, "%lf", &usage);
+    pclose(pipe);
+#endif
+
+    return usage;
+}
+
+double getRamUsage() {
+    double usage = 0.0;
+#ifdef _WIN32
+    PROCESS_MEMORY_COUNTERS pmc;
+    GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
+
+    usage = static_cast<double>(pmc.WorkingSetSize);
+#elif __linux__
+    // Code to get RAM Usage on Linux
+    char ramUsageCommand[50];
+    FILE* pipe = popen("free | grep Mem | awk '{print $3 * 1024}'", "r");
+    if (!pipe) return 0.0;
+
+    fscanf(pipe, "%lf", &usage);
+    pclose(pipe);
+#endif
+
+    return usage;
+}
+
+double getRamUsage_percent() {
+    double usage = 0.0;
+#ifdef _WIN32
+    MEMORYSTATUSEX memInfo;
+    memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+    GlobalMemoryStatusEx(&memInfo);
+
+    usage = ((memInfo.ullTotalPhys - memInfo.ullAvailPhys) * 100) / memInfo.ullTotalPhys;
+#elif __linux__
+    // Code to get RAM Usage on Linux
+    char ramUsageCommand[50];
+    FILE* pipe = popen("free | grep Mem | awk '{print $3/$2 * 100.0}'", "r");
+    if (!pipe) return 0.0;
+
+    fscanf(pipe, "%lf", &usage);
+    pclose(pipe);
+#endif
+
+    return usage;
+}
 
 #ifdef REPLIT
-
 void get_data(MYSQL*& db) {
     token = std::getenv("discord");
     apikey = std::getenv("youtube");
@@ -40,6 +118,14 @@ void get_data(MYSQL*& db) {
 #else
 void get_data(MYSQL*& db) {
     std::ifstream f("token.json");
+    if (!f.is_open()) {
+        throw std::runtime_error("can't open \"token.json\" , check the file");
+    }
+    //std::string a;
+    //while (std::getline(f, a)) {
+    //    std::cout << a;
+    //}
+
     json j = json::parse(f);
     if (j["discord"].is_string() && j["youtube"].is_string() && j["gemini"].is_string()
         
@@ -49,22 +135,55 @@ void get_data(MYSQL*& db) {
         token = j["discord"].get<std::string>();
         apikey = j["youtube"].get<std::string>();
         gemini_api = j["gemini"].get<std::string>();
-        db = mysql_init(NULL);
-        if (!db) {
-            throw std::exception("sql init failed");
+
+        //dùng azure openAI
+        if (j.contains("openAI-azure") && j.contains("endpoint") && !j.contains("openAI")) {
+            use_azure_openAI = true;
+            openAI_api = j["openAI-azure"].get<std::string>();
+            endpoint = j["endpoint"].get<std::string>();
         }
+        // dùng openAI
+        else if (j.contains("openAI") && !j.contains("openAI-azure")) {
+            openAI_api = j["openAI"].get<std::string>();
+        }
+        // các lỗi
+        else if (j.contains("openAI-azure") && !j.contains("endpoint") && !j.contains("openAI")) {
+            throw std::runtime_error("you are missing \"endpoint\", edit it in token.json");
+        }
+        else if (j.contains("openAI-azure") && j.contains("endpoint") && j.contains("openAI")) {
+            throw std::runtime_error("you can only use one in one season, remove \"openAI-azure\" and \"endpoint\" or \"openAI\"");
+        }
+
+        //khởi tạo kết nối
+        db = mysql_init(nullptr);
+        if (db == nullptr) {
+            throw std::runtime_error("mysql_init() failed");
+        }
+
+        // Cấu hình SSL nếu cần thiết
         if (j["database"]["ssl"].is_boolean() && j["database"]["ssl"].get<bool>()) {
-            if (mysql_ssl_set(db, NULL, NULL, NULL, NULL, NULL)) {
-                throw std::exception(mysql_error(db));
+            if (mysql_ssl_set(db, nullptr, nullptr, nullptr, nullptr, nullptr)) {
+                std::string error_message = "mysql_ssl_set() failed: " + std::string(mysql_error(db));
+                mysql_close(db);
+                throw std::runtime_error(error_message);
             }
         }
-        if (mysql_real_connect(db, j["database"]["address"].get<std::string>().c_str(), j["database"]["username"].get<std::string>().c_str(), j["database"]["password"].get<std::string>().c_str(), j["database"]["name"].get<std::string>().c_str(), j["database"]["port"].get<int>(), nullptr, 0) == NULL) {
-            throw std::exception(mysql_error(db));
+
+        // Kết nối đến cơ sở dữ liệu
+        std::string host = j["database"]["address"].get<std::string>().c_str();
+        std::string user = j["database"]["username"].get<std::string>().c_str();
+        std::string password = j["database"]["password"].get<std::string>().c_str();
+        std::string database = j["database"]["name"].get<std::string>().c_str();
+        unsigned int port = j["database"]["port"].get<int>();
+
+        if (mysql_real_connect(db, host.c_str(), user.c_str(), password.c_str(), database.c_str(), port, nullptr, 0) == nullptr) {
+            std::string error_message = "mysql_real_connect() failed: " + std::string(mysql_error(db));
+            mysql_close(db);
+            throw std::runtime_error(error_message);
         }
     }
     else throw std::exception("something are missing");
 }
-
 #endif
 
 bool isURL(const std::string& str) {
@@ -88,14 +207,21 @@ std::vector<std::string> findURLs(std::string text) {
 }
 
 signed main() {
+
     MYSQL* database;
+
     try {
         get_data(database);
     }
-    catch (std::exception ex) {
-        std::printf(ex.what());
+    catch (json::exception ex) {
+        std::cerr << ex.what();
         return -1;
     }
+    catch (std::exception ex) {
+        std::cerr << ex.what();
+        return -1;
+    }
+
     dpp::cluster bot(token, dpp::i_default_intents | dpp::i_message_content);
 
     bot.on_log(dpp::utility::cout_logger());
@@ -108,14 +234,16 @@ signed main() {
             });
 
         if (dpp::run_once<struct register_bot_commands>()) {
-            dpp::slashcommand info("info", "thông tin bot", bot.me.id),
+            dpp::slashcommand info("info", "xem trạng thái bot", bot.me.id),
                 help("help", "xem lệnh của bot", bot.me.id),
-                seach("seach", "tìm video(không hỗ trợ stream)", bot.me.id),
+                seach("search", "tìm video(không hỗ trợ stream)", bot.me.id),
                 bypass("bypass", "vượt link", bot.me.id),
                 /*addemoji("add_emoji", "thêm emoji vào máy chủ", bot.me.id),*/
                 aichat("ask", "trò chuyện với AI", bot.me.id),
                 game("game", "chơi trò chơi", bot.me.id),
-                reg("register", "register", bot.me.id);
+                reg("register", "register", bot.me.id),
+                daily("daily", "nhận tiền mỗi ngày", bot.me.id),
+                balance("balance", "xem số dư của bạn", bot.me.id);
 
             seach.add_option(dpp::command_option(dpp::co_string, "text", "text", true));
 
@@ -128,6 +256,8 @@ signed main() {
                 .add_option(dpp::command_option(dpp::co_integer, "module", "chọn module AI", true)
                     .add_choice(dpp::command_option_choice("gemini-1.5-flash", 1))
                     .add_choice(dpp::command_option_choice("gemini-1.0-pro", 2))
+                    .add_choice(dpp::command_option_choice("chatgpt-4o",3))
+                    .add_choice(dpp::command_option_choice("chatgpt-4o-mini", 4))
                 )
                 .add_option(dpp::command_option(dpp::co_attachment, "file", "tệp dính kèm"));
             
@@ -137,27 +267,27 @@ signed main() {
                 )
                 .add_option(dpp::command_option(dpp::co_integer, "amount", "số tiền cược", true));
 
-            bot.global_bulk_command_create({ info,seach,bypass,help,/*addemoji,*/aichat,game,reg });
+            bot.global_bulk_command_create({ info,seach,bypass,help,/*addemoji,*/aichat,game,reg,daily,balance });
         }
         });
 
     // lệnh '/'
     bot.on_slashcommand([&bot, &database](const dpp::slashcommand_t& event) -> dpp::task<void> {
-        
+
         event.co_thinking(false);
 
         //giới thiệu
-        if (event.command.get_command_name() == "info") {
+        /*if (event.command.get_command_name() == "info") {
             dpp::embed text = dpp::embed().
                 set_color(0x0099ff).
-                set_title("aqua bot").
+                set_title("Aqua bot").
                 set_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ").
-                set_description("bot của anos :)").
+                set_description("bot của Anos :)").
                 set_thumbnail("https://www.nautiljon.com/images/perso/00/20/anos_voldigoad_19602.webp?1680033786").
                 set_timestamp(time(0));
             dpp::message about(event.command.channel_id, text);
             event.co_edit_original_response(about);
-        }
+        }*/
 
         //lệnh bảo trì
         if (event.command.get_command_name() == "bypass") {
@@ -171,7 +301,7 @@ signed main() {
             else event.edit_original_response(dpp::message("lệnh đang bảo trì"));
         }
         if (event.command.get_command_name() == "ask") {
-            
+
             std::string data = std::get<std::string>(event.get_parameter("content"));
 
             int module = std::get<int64_t>(event.get_parameter("module"));
@@ -179,14 +309,24 @@ signed main() {
             bool have_file = std::holds_alternative<std::monostate>(event.get_parameter("file"));
 
             dpp::attachment file(NULL);
-            
+
             if (!have_file) {
                 // parameter is not empty
                 dpp::snowflake file_id = std::get<dpp::snowflake>(event.get_parameter("file"));
                 file = event.command.get_resolved_attachment(file_id);
             }
             try {
-                event.edit_original_response(co_await(have_file ? gemini(bot, data, module) : gemini(bot, data, file, module)));
+                if (module == 1 || module == 2) {
+                    event.edit_original_response(co_await(have_file ? gemini(bot, data, module) : gemini(bot, data, file, module)));
+                }
+                if (module == 3 || module == 4) {
+                    if (!have_file) {
+                        event.edit_original_response(dpp::message("Tạm thời bot không hỗ trợ file cho module này"));
+                    }
+                    else {
+                        event.edit_original_response(co_await chatgpt(bot, data, module));
+                    }
+                }
             }
             catch (request_error& ex) {
                 bot.log(dpp::ll_error, ex.what());
@@ -194,55 +334,63 @@ signed main() {
             }
             catch (std::exception& ex) {
                 bot.log(dpp::ll_critical, ex.what());
-                event.edit_original_response(dpp::message("có lỗi ngiêm trọng xảy ra"));
+                event.edit_original_response(dpp::message("có lỗi nghiêm trọng xảy ra"));
             }
         }
 
         //tìm video
-        if (event.command.get_command_name() == "seach") {
+        if (event.command.get_command_name() == "search") {
             std::string text = std::get<std::string>(event.get_parameter("text"));
             co_await seach(text, bot, event);
         }
 
-        if (event.command.get_command_name() == "register") {
-            try {
-                co_await reg(database, event.command.usr.id, event);
-            }
-            catch (request_error& ex) {
-                bot.log(dpp::ll_error, ex.what());
-                ex.send_error(bot, event, dev_id);
-            }
-            catch (std::exception& ex) {
-                bot.log(dpp::ll_critical, ex.what());
-                event.edit_original_response(dpp::message("có lỗi ngiêm trọng xảy ra"));
-            }
-        }
 
-        if (event.command.get_command_name() == "game") {
-            std::string game = std::get<std::string>(event.get_parameter("game"));
-            dpp::snowflake user = event.command.usr.id;
-            int amount = std::get<int64_t>(event.get_parameter("amount"));
-            if (game == "blackjack") {
-                try {
+        if (event.command.get_command_name() == "info") {
+            dpp::embed info = dpp::embed()
+                .add_field("Mức sử dụng cpu(đơn vị:%)", fmt::format("{} %", getCpuUsage()))
+                .add_field("Mức sử dụng ram(đơn vị:MB)", fmt::format("{} MB ({} %)", getRamUsage() / 1024, getRamUsage_percent()));
+            event.edit_original_response(info);
+        }
+        //hàm liên quan đến game
+        try {
+            if (event.command.get_command_name() == "register") {
+                co_await reg(database, event);
+            }
+
+            if (event.command.get_command_name() == "game") {
+                std::string game = std::get<std::string>(event.get_parameter("game"));
+                dpp::snowflake user = event.command.usr.id;
+                int amount = std::get<int64_t>(event.get_parameter("amount"));
+                if (game == "blackjack") {
                     blackjack a(user, amount);
                     co_await a.play(database, event);
-                }
-                catch (request_error& ex) {
-                    bot.log(dpp::ll_error, ex.what());
-                    ex.send_error(bot, event, dev_id);
-                }
-                catch (std::exception& ex) {
-                    bot.log(dpp::ll_critical, ex.what());
-                    event.edit_original_response(dpp::message("có lỗi ngiêm trọng xảy ra"));
+
                 }
             }
-        }
 
+            if (event.command.get_command_name() == "balance") {
+                int64_t ammount = co_await get_money(database, event.command.usr.id);
+                event.edit_original_response(dpp::message(fmt::format("Số dư của bạn là: {}", ammount)));
+            }
+
+            if (event.command.get_command_name() == "daily") {
+                co_await daily(database, event);
+            }
+        }
+        catch (request_error& ex) {
+            bot.log(dpp::ll_error, ex.what());
+            ex.send_error(bot, event, dev_id);
+        }
+        catch (std::exception& ex) {
+            bot.log(dpp::ll_critical, ex.what());
+            event.edit_original_response(dpp::message("có lỗi nghiêm trọng xảy ra"));
+        }
         //trợ giúp
         if (event.command.get_command_name() == "help") {
-            dpp::message text(event.command.channel_id,dpp::embed()
-                .add_field("slash command", "tạm thời chưa sử dụng được")
-                .add_field("command", "sẽ update sau")
+            dpp::message text(event.command.channel_id, dpp::embed()
+                .set_title("Các lệnh của bot")
+                .add_field("Slash command", "hãy dùng \"/\" để xem chi tiết")
+                .add_field("Command", "Không có sẵn")
                 .set_timestamp(time(0)));
             event.co_edit_original_response(text);
         }

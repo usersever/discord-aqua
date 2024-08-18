@@ -4,10 +4,13 @@
     "name": "",
     "username": "",
     "password": "",
-    "port": ,
+    "port": 0,
     "ssl": true
   },
   "discord": "",
   "gemini": "",
-  "youtube": ""
+  "youtube": "", 
+  "openAI": "", //bỏ hai dòng dưới nếu dùng cái này và ngược lại
+  "openAI-azure": "", 
+  "endpoint": "https://example.com" //CẤM thêm "/" vào sau cùng vì sẽ gây lỗi
 }

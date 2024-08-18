@@ -6,7 +6,9 @@ struct Card {
 	std::string suit;
 };
 
-dpp::task<void> reg(MYSQL* db, dpp::snowflake user_id, const dpp::slashcommand_t& event);
+dpp::task<void> reg(MYSQL* db, const dpp::slashcommand_t& event);
+dpp::task<int64_t> get_money(MYSQL* db, dpp::snowflake user_id);
+dpp::task<void> daily(MYSQL* db, const dpp::slashcommand_t& event);
 
 class blackjack {
 public:
@@ -20,8 +22,6 @@ private:
 	int card_vaule(const Card& card) const;
 	int player_vaule(std::vector<Card>& cards) const;
 	bool is_bust(std::vector<Card>& cards) const;
-	int get_money(MYSQL* db, dpp::snowflake user_id) const;
-	void update_money(MYSQL* db, dpp::snowflake user_id, int balance) const;
 	void bot_play(std::vector<Card>& deck, std::vector<Card>& bot);
 	void distribute();
 	std::string get_emoji_string(std::vector<Card> card) const;

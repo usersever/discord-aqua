@@ -64,7 +64,7 @@ int blackjack::player_vaule(std::vector<Card>& cards) const {
 		total += card_vaule(a);
 		if (a.value == "a") A++;
 	}
-	while (total > 0 && A > 0) {
+	while (total > 21 && A > 0) {
 		total -= 10;
 		A--;
 	}
@@ -75,7 +75,7 @@ bool blackjack::is_bust(std::vector<Card>& cards) const {
 	return player_vaule(cards) > 21;
 }
 
-int blackjack::get_money(MYSQL* db, dpp::snowflake user_id) const {
+dpp::task<int64_t> get_money(MYSQL* db, dpp::snowflake user_id) {
 	std::string qwerty = "SELECT balance FROM players WHERE user_id = " + std::to_string(user_id);
 	if (mysql_query(db, qwerty.c_str())) {
 		REQUEST_ERROR(mysql_error(db), qwerty, "");
@@ -87,20 +87,20 @@ int blackjack::get_money(MYSQL* db, dpp::snowflake user_id) const {
 	}
 
 	if (mysql_num_rows(result) == 0) {
-		return -1;
+		co_return -1;
 	}
 
 	MYSQL_ROW row = mysql_fetch_row(result);
 
 	if (row == NULL) REQUEST_ERROR("mysql fetch row failed", qwerty, "");
 
-	int balance = std::stoi(row[0]);
+	int64_t balance = std::stoi(row[0]);
 	mysql_free_result(result);
 
-	return balance;
+	co_return balance;
 }
 
-void blackjack::update_money(MYSQL* db, dpp::snowflake user_id, int balance) const {
+void update_money(MYSQL* db, dpp::snowflake user_id, int balance) {
 	std::string qwerty = fmt::format(fmt::runtime("UPDATE players SET balance = {0} WHERE user_id = {1}"), balance, user_id);
 	MYSQL_STMT* stmt = mysql_stmt_init(db);
 	if (!stmt) {
@@ -153,7 +153,7 @@ std::string blackjack::get_emoji_string(Card card) const {
 
 dpp::task<void> blackjack::play(MYSQL* db, const dpp::slashcommand_t& event) {
 	//get player's money
-	int balance = get_money(db, user_id);
+	int64_t balance = co_await get_money(db, user_id);
 	//check if user doesn't register before
 	if (balance == -1) {
 		event.edit_original_response(no_reg);
@@ -287,14 +287,92 @@ dpp::task<bool> is_exist(MYSQL* db, dpp::snowflake user_id) {
 	co_return exists;
 }
 
-dpp::task<void> reg(MYSQL* db, dpp::snowflake user_id, const dpp::slashcommand_t& event) {
+dpp::task<void> reg(MYSQL* db, const dpp::slashcommand_t& event) {
+	dpp::snowflake user_id = event.command.usr.id;
 	if (co_await is_exist(db, user_id)) {
 		event.edit_original_response(dpp::message("bạn đã đăng kí trước kia"));
 		co_return;
 	}
-	std::string qwerty = fmt::format(fmt::runtime("INSERT INTO players (user_id) VALUES ({})"), user_id);
+	std::string qwerty = fmt::format(fmt::runtime("INSERT INTO players (user_id) VALUES ({})"), std::to_string(user_id));
 	if (mysql_query(db, qwerty.c_str())) {
 		REQUEST_ERROR(mysql_error(db), qwerty, "");
 	}
 	else event.edit_original_response(dpp::message("đăng kí thành công"));
+}
+
+dpp::task<void> daily(MYSQL* db, const dpp::slashcommand_t& event) {
+	dpp::snowflake user_id = event.command.usr.id;
+
+	if (!co_await is_exist(db, user_id)) {
+		event.edit_original_response(no_reg);
+		co_return;
+	}
+	std::string qwerty = "SELECT last_claim FROM players WHERE user_id = " + std::to_string(user_id);
+	if (mysql_query(db, qwerty.c_str())) {
+		REQUEST_ERROR(mysql_error(db), qwerty, "");
+	}
+	MYSQL_RES* result = mysql_store_result(db);
+	if (result == nullptr) {
+		REQUEST_ERROR("failed to get result", qwerty, mysql_error(db));
+	}
+	MYSQL_ROW row = mysql_fetch_row(result);
+	if (row[0]) {
+		std::tm tm = {};
+		std::istringstream ss(row[0]);
+		ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
+		if (ss.fail()) throw std::runtime_error("std::istringstream failed");
+		else {
+
+			// Chuyển đổi std::tm thành std::time_t
+			std::time_t time = std::mktime(&tm);
+
+			// Lấy thời gian hiện tại
+			auto now = std::chrono::system_clock::now();
+			std::time_t now_tt = std::chrono::system_clock::to_time_t(now);
+
+			// Chuyển đổi thời gian hiện tại thành GMT+7
+			std::tm now_tm = {};
+			gmtime_s(&now_tm, &now_tt);
+			now_tm.tm_hour += 7;
+			std::time_t now_gmt7 = std::mktime(&now_tm);
+
+			// Tính toán khoảng thời gian giữa thời gian hiện tại và thời gian được cung cấp
+			auto duration = std::chrono::seconds(now_gmt7 - time);
+
+			// Tạo duration cho 1 ngày
+			auto one_day = std::chrono::hours(24);
+
+
+			if (duration < one_day) {
+				auto wait_time = std::chrono::system_clock::now() + one_day - duration;
+				event.edit_original_response(dpp::message(fmt::format("hãy quay lại và nhận sau <t:{}:R>", std::to_string(std::chrono::system_clock::to_time_t(wait_time)))));
+				co_return;
+			}
+		}
+	}
+	//lấy thời gian hiện tại
+	std::tm now{};
+	std::time_t now_tt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+	gmtime_s(&now, &now_tt);
+	now.tm_hour += 7;
+	mktime(&now);
+
+	//format thời gian
+	std::ostringstream oss;
+	oss << std::put_time(&now, "%Y-%m-%d %H:%M:%S");
+
+	srand(time(0));
+	int random_money = rand() % 100000 + 1000;
+	int new_balance = co_await get_money(db, user_id) + random_money;
+	dpp::embed embed = dpp::embed()
+		.set_color(0x00ff00)
+		.set_title(fmt::format("bạn đã nhận được {}, hãy quay lại vào hôm sau để nhận tiếp", random_money));
+	event.edit_original_response(embed);
+	
+	qwerty = fmt::format("UPDATE players SET last_claim = '{0}' WHERE user_id = {1}", oss.str(), std::to_string(user_id));
+	if (mysql_query(db, qwerty.c_str())) {
+		REQUEST_ERROR("update time failed", qwerty, mysql_error(db));
+	}
+
+	update_money(db, user_id, new_balance);
 }

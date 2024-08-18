@@ -9,17 +9,42 @@ set(DPP_CORO ON)
 
 # Vcpkg integration
 if(DEFINED ENV{VCPKG_ROOT} AND EXISTS $ENV{VCPKG_ROOT})
-	message("Found vcpkg at $ENV{VCPKG_ROOT}")
-	set(VCPKG_ROOT "$ENV{VCPKG_ROOT}")
-	set(CMAKE_TOOLCHAIN_FILE "${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+    message("Found vcpkg at $ENV{VCPKG_ROOT}")
+    set(VCPKG_ROOT "$ENV{VCPKG_ROOT}")
+    set(CMAKE_TOOLCHAIN_FILE "${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
 endif()
 
+# Define a function to handle FetchContent for a library
+function(fetch_content_if_not_found LIB_NAME GIT_REPO TARGET_NAME)
+    if(NOT ${LIB_NAME}_FOUND)
+        include(FetchContent)
+        set(${LIB_NAME}_SOURCE_DIR "${CMAKE_BINARY_DIR}/3rdlib/${LIB_NAME}")
+        set(${LIB_NAME}_BINARY_DIR "${CMAKE_BINARY_DIR}/build/${LIB_NAME}")
+        if(NOT EXISTS ${${LIB_NAME}_SOURCE_DIR})
+            message(STATUS "${LIB_NAME} dir is not found, starting install and build from repository...")
+            FetchContent_Declare(
+                ${LIB_NAME}
+                GIT_REPOSITORY ${GIT_REPO}
+                SOURCE_DIR ${${LIB_NAME}_SOURCE_DIR}
+                BINARY_DIR ${${LIB_NAME}_BINARY_DIR}
+            )
+            FetchContent_MakeAvailable(${LIB_NAME})
+        else()
+            message(STATUS "${LIB_NAME} is found and not installed, installing from source...")
+            add_subdirectory(${${LIB_NAME}_SOURCE_DIR} ${${LIB_NAME}_BINARY_DIR})
+        endif()
+        target_link_libraries(bot_discord PRIVATE ${TARGET_NAME})
+    else()
+        target_link_libraries(bot_discord PRIVATE ${LIB_NAME}::${TARGET_NAME})
+    endif()
+endfunction()
+
 # Find required packages
-find_package(OpenSSL CONFIG QUIET)
-find_package(CURL CONFIG QUIET)
-find_package(dpp CONFIG QUIET)
-find_package(fmt CONFIG QUIET)
-find_package(unofficial-libmysql CONFIG QUIET)
+find_package(OpenSSL CONFIG REQUIRED)
+find_package(CURL CONFIG REQUIRED)
+find_package(dpp CONFIG REQUIRED)
+find_package(fmt CONFIG REQUIRED)
+find_package(unofficial-libmysql CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 # Define the executable target
@@ -31,109 +56,12 @@ target_include_directories(bot_discord PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # Add compile definitions
 target_compile_definitions(bot_discord PRIVATE ASIO_STANDALONE)
 
-if(NOT dpp_FOUND)
-	include(FetchContent)
-	set(DPP_SOURCE_DIR "${CMAKE_BINARY_DIR}/3rdlib/DPP")
-    set(DPP_BINARY_DIR "${CMAKE_BINARY_DIR}/build/DPP")
-	if(NOT EXISTS ${DPP_SOURCE_DIR})
-		message(STATUS "DPP dir is not found, starting install and build from repository...")
-		FetchContent_Declare(
-			dpp
-			GIT_REPOSITORY https://github.com/brainboxdotcc/DPP.git 
-			SOURCE_DIR ${DPP_SOURCE_DIR} 
-			BINARY_DIR ${DPP_BINARY_DIR})
-		FetchContent_MakeAvailable(dpp)
-	else()
-		message(STATUS "DPP is found and not installed, installing from source...")	
-		add_subdirectory(${DPP_SOURCE_DIR} ${DPP_BINARY_DIR})
-	endif()
-	target_link_libraries(bot_discord PRIVATE dpp)
-else()
-	target_link_libraries(bot_discord PRIVATE dpp::dpp)
-endif()
+# Fetch and link required libraries if not found
+fetch_content_if_not_found(dpp "https://github.com/brainboxdotcc/DPP.git" dpp)
+fetch_content_if_not_found(CURL "https://github.com/curl/curl.git" libcurl)
+fetch_content_if_not_found(OpenSSL "https://github.com/openssl/openssl.git" OpenSSL)
+fetch_content_if_not_found(fmt "https://github.com/fmtlib/fmt.git" fmt-header-only)
+fetch_content_if_not_found(unofficial-libmysql "https://github.com/mysql/mysql-server.git" libmysql)
 
-if(NOT CURL_FOUND)
-	include(FetchContent)
-	set(CURL_SOURCE_DIR "${CMAKE_BINARY_DIR}/3rdlib/CURL")
-    set(CURL_BINARY_DIR "${CMAKE_BINARY_DIR}/build/CURL")
-	if(NOT EXISTS ${CURL_SOURCE_DIR})
-		message(STATUS "CURL dir is not found, starting install and build from repository...")
-		FetchContent_Declare(
-			CURL
-			GIT_REPOSITORY https://github.com/curl/curl.git
-			SOURCE_DIR ${CURL_SOURCE_DIR} 
-			BINARY_DIR ${CURL_BINARY_DIR})
-		FetchContent_MakeAvailable(CURL)
-	else()
-		message(STATUS "CURL is found and not installed, installing from source...")	
-		add_subdirectory(${CURL_SOURCE_DIR} ${CURL_BINARY_DIR})
-	endif()
-	target_link_libraries(bot_discord PRIVATE CURL)
-else()
-	target_link_libraries(bot_discord PRIVATE CURL::libcurl)
-endif()
-
-if(NOT OpenSSL_FOUND)
-	include(FetchContent)
-	set(OpenSSL_SOURCE_DIR "${CMAKE_BINARY_DIR}/3rdlib/OpenSSL")
-    set(OpenSSL_BINARY_DIR "${CMAKE_BINARY_DIR}/build/OpenSSL")
-	if(NOT EXISTS ${OpenSSL_SOURCE_DIR})
-		message(STATUS "OpenSSL dir is not found, starting install and build from repository...")
-		FetchContent_Declare(
-			OpenSSL
-			GIT_REPOSITORY https://github.com/openssl/openssl.git
-			SOURCE_DIR ${OpenSSL_SOURCE_DIR} 
-			BINARY_DIR ${OpenSSL_BINARY_DIR})
-		FetchContent_MakeAvailable(OpenSSL)
-	else()
-		message(STATUS "OpenSSL is found and not installed, installing from source...")	
-		add_subdirectory(${OpenSSL_SOURCE_DIR} ${OpenSSL_BINARY_DIR})
-	endif()
-	target_link_libraries(bot_discord PRIVATE OpenSSL)
-else()
-	target_link_libraries(bot_discord PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-endif()
-
-if(NOT fmt_FOUND)
-	include(FetchContent)
-	set(fmt_SOURCE_DIR "${CMAKE_BINARY_DIR}/3rdlib/fmt")
-    set(fmt_BINARY_DIR "${CMAKE_BINARY_DIR}/build/fmt")
-	if(NOT EXISTS ${fmt_SOURCE_DIR})
-		message(STATUS "fmt dir is not found, starting install and build from repository...")
-		FetchContent_Declare(
-			fmt
-			GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-			SOURCE_DIR ${fmt_SOURCE_DIR} 
-			BINARY_DIR ${fmt_BINARY_DIR})
-		FetchContent_MakeAvailable(fmt)
-	else()
-		message(STATUS "fmt is found and not installed, installing from source...")	
-		add_subdirectory(${fmt_SOURCE_DIR} ${fmt_BINARY_DIR})
-	endif()
-	target_link_libraries(bot_discord PRIVATE fmt)
-else()
-	target_link_libraries(bot_discord PRIVATE fmt::fmt-header-only)
-endif()
-
-if(NOT unofficial-libmysql_FOUND)
-	include(FetchContent)
-	set(mysql_SOURCE_DIR "${CMAKE_BINARY_DIR}/3rdlib/mysql-server")
-    set(mysql_BINARY_DIR "${CMAKE_BINARY_DIR}/build/mysql-server")
-	if(NOT EXISTS ${mysql_SOURCE_DIR})
-		message(STATUS "mysql dir is not found, starting install and build from repository...")
-		FetchContent_Declare(
-			mysql
-			GIT_REPOSITORY https://github.com/mysql/mysql-server.git
-			SOURCE_DIR ${mysql_SOURCE_DIR} 
-			BINARY_DIR ${mysql_BINARY_DIR})
-		FetchContent_MakeAvailable(mysql)
-	else()
-		message(STATUS "mysql is found and not installed, installing from source...")	
-		add_subdirectory(${mysql_SOURCE_DIR} ${mysql_BINARY_DIR})
-	endif()
-	target_link_libraries(bot_discord PRIVATE mysql)
-else()
-	target_link_libraries(bot_discord PRIVATE unofficial::libmysql::libmysql)
-endif()
-
+# Link threads library
 target_link_libraries(bot_discord PRIVATE ${CMAKE_THREAD_LIBS_INIT})

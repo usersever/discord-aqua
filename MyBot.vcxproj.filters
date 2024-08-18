@@ -196,6 +196,9 @@
     <None Include="token.json">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="token.json.example">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Text Include="CMakeLists.txt">

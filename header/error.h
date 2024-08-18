@@ -27,8 +27,8 @@ public:
     }
 
     void send_error(dpp::cluster& bot, const dpp::slashcommand_t& event, dpp::snowflake dev_id) {
-        dpp::message contain(fmt::format(fmt::runtime("Phát hiện lỗi yêu cầu:\nFile bị lỗi:{0}\nNội dung yêu cầu:{1}\nnội dung phản hồi:"), file, request));
-        if (response.empty()) contain.add_file("response.txt", response);
+        dpp::message contain(fmt::format(fmt::runtime("Phát hiện lỗi yêu cầu:\nFile bị lỗi:{0}\nNội dung yêu cầu:\n```json\n{1}```\nnội dung phản hồi:"), file, request)); 
+        contain.add_file("response.txt", response);
         bot.direct_message_create(dev_id, contain);
 
         event.edit_original_response(dpp::message(error));
