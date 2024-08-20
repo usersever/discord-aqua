@@ -1,4 +1,5 @@
 #include <dpp/dpp.h>
+#include <dpp/unicode_emoji.h>
 #include <dpp/nlohmann/json.hpp>
 #include <regex>
 #include <fmt/format.h>
@@ -262,10 +263,13 @@ signed main() {
                 .add_option(dpp::command_option(dpp::co_attachment, "file", "tệp dính kèm"));
             
 
-            game.add_option(dpp::command_option(dpp::co_string, "game", "chọn trò chơi", true)
-                    .add_choice(dpp::command_option_choice("blackjack", "blackjack"))
-                )
-                .add_option(dpp::command_option(dpp::co_integer, "amount", "số tiền cược", true));
+            game.add_option(dpp::command_option(dpp::co_sub_command, "blackjack", "Game blackjack")
+                .add_option(dpp::command_option(dpp::co_integer, "amount", "Số tiền cược", true)))
+                .add_option(dpp::command_option(dpp::co_sub_command, "coinflip", "Game coinflip")
+                    .add_option(dpp::command_option(dpp::co_integer, "amount", "Số tiền cược", true))
+                    .add_option(dpp::command_option(dpp::co_integer, "coin-face", "Mặt xu bạn cược", true)
+                        .add_choice(dpp::command_option_choice(std::string(dpp::unicode_emoji::white_circle) + " mặt ngửa", 0))
+                        .add_choice(dpp::command_option_choice(std::string(dpp::unicode_emoji::black_circle) + " mặt úp", 1))));
 
             bot.global_bulk_command_create({ info,seach,bypass,help,/*addemoji,*/aichat,game,reg,daily,balance });
         }
@@ -353,28 +357,33 @@ signed main() {
         }
         //hàm liên quan đến game
         try {
+            game game;
             if (event.command.get_command_name() == "register") {
-                co_await reg(database, event);
+                co_await game.reg(database, event);
             }
 
             if (event.command.get_command_name() == "game") {
-                std::string game = std::get<std::string>(event.get_parameter("game"));
+                std::string game = event.command.get_command_interaction().options[0].name;
+
                 dpp::snowflake user = event.command.usr.id;
                 int amount = std::get<int64_t>(event.get_parameter("amount"));
                 if (game == "blackjack") {
                     blackjack a(user, amount);
                     co_await a.play(database, event);
-
+                }
+                else if (game == "coinflip") {
+                    coinflip c(user, amount);
+                    co_await c.start(database, event);
                 }
             }
 
             if (event.command.get_command_name() == "balance") {
-                int64_t ammount = co_await get_money(database, event.command.usr.id);
+                int64_t ammount = co_await game.get_money(database, event.command.usr.id);
                 event.edit_original_response(dpp::message(fmt::format("Số dư của bạn là: {}", ammount)));
             }
 
             if (event.command.get_command_name() == "daily") {
-                co_await daily(database, event);
+                co_await game.daily(database, event);
             }
         }
         catch (request_error& ex) {

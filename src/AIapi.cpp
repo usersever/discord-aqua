@@ -180,7 +180,6 @@ dpp::task<dpp::message> chatgpt(dpp::cluster& bot, const std::string text, unsig
 
 	dpp::http_request_completion_t response = co_await bot.co_request(url, dpp::m_post, data.dump(0), "", header);
 	
-	bot.log(dpp::ll_debug, response.body);
 	if (response.status == 200) {
 		co_return dpp::message(json::parse(response.body)["choices"]["message"]["content"].get<std::string>()).add_embed(warm);
 	}
